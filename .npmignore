@@ -1,0 +1,5 @@
+src/main.tsx
+src/App.tsx
+.storybook/
+node_modules/
+dist/storybook-static/
