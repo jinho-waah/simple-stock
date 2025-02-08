@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useState } from "react";
+import formatTime from "../utils/formatTime";
 
 interface OHLCVData {
   date: string;
@@ -12,61 +13,94 @@ interface OHLCVData {
 
 interface OHLCVChartProps {
   data: OHLCVData[];
-  width?: number; // Optional width
-  height?: number; // Optional height
+  unit: "minute" | "hour" | "day" | "week" | "month";
+  dark?: boolean;
+  setClickedCandle?: (candle: OHLCVData | null) => void;
 }
 
 const OHLCVChart: React.FC<OHLCVChartProps> = ({
   data,
-  width = 800,
-  height = 400,
+  unit,
+  dark = false,
+  setClickedCandle,
 }) => {
+  const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   // State to manage the visible range of data
   const [visibleRange, setVisibleRange] = useState({
-    start: 0,
-    end: Math.min(30, data.length), // Default to showing the first 30 candles
+    start: Math.max(0, data.length - 30),
+    end: data.length, // Default to showing the first 30 candles
   });
 
-  useEffect(() => {
-    const canvas = canvasRef.current;
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStartX, setDragStartX] = useState<number | null>(null);
 
+  useEffect(() => {
+    // Use ResizeObserver to track container size
+    const resizeObserver = new ResizeObserver((entries) => {
+      if (entries[0]) {
+        const { width, height } = entries[0].contentRect;
+        setDimensions({ width, height });
+      }
+    });
+
+    if (containerRef.current) {
+      resizeObserver.observe(containerRef.current);
+    }
+
+    const canvas = canvasRef.current;
     if (!canvas) return;
 
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
     // Set canvas size dynamically based on props
-    canvas.width = width;
-    canvas.height = height;
+    canvas.width = dimensions.width;
+    canvas.height = dimensions.height;
+
+    ctx.fillStyle = dark ? "#202020" : "#FFF";
+    ctx.fillRect(0, 0, dimensions.width, dimensions.height);
+
+    const margin = { top: 10, right: 50, bottom: 40, left: 10 };
 
     // Draw chart
-    const drawChart = (
-      ctx: CanvasRenderingContext2D,
-      width: number,
-      height: number
-    ) => {
-      ctx.clearRect(0, 0, width, height);
+    const drawChart = (ctx: CanvasRenderingContext2D) => {
+      ctx.fillStyle = dark ? "#202020" : "#FFFFFF";
+      ctx.fillRect(0, 0, dimensions.width, dimensions.height);
 
-      const margin = { top: 10, right: 50, bottom: 40, left: 10 };
-      const chartWidth = width - margin.left - margin.right;
-      const chartHeight = height - margin.top - margin.bottom;
+      const chartWidth = dimensions.width - margin.left - margin.right;
+      const chartHeight = dimensions.height - margin.top - margin.bottom;
+
+      // Split chart height for price and volume
+      const priceChartHeight = chartHeight * 0.9; // Top 70% for price chart
+      const volumeChartHeight = chartHeight * 0.1; // Bottom 30% for volume
 
       // Get visible data based on the range
       const visibleData = data.slice(visibleRange.start, visibleRange.end);
 
       const minPrice = Math.min(...visibleData.map((d) => d.low));
       const maxPrice = Math.max(...visibleData.map((d) => d.high));
+      const maxVolume = Math.max(...visibleData.map((d) => d.volume));
 
-      // 캔들 너비를 데이터 개수에 따라 정확히 계산 (빈 공간 제거)
-      const candleWidth = chartWidth / visibleData.length;
+      const gap = 2;
+      const candleWidth =
+        (chartWidth - gap * (visibleData.length - 1)) / visibleData.length;
 
-      const xScale = (index: number) => candleWidth * index + margin.left;
-      const yScale = (price: number) =>
-        chartHeight -
-        ((price - minPrice) / (maxPrice - minPrice)) * chartHeight +
+      const xScale = (index: number) =>
+        index * (candleWidth + gap) + margin.left;
+
+      const yScalePrice = (price: number) =>
+        priceChartHeight -
+        ((price - minPrice) / (maxPrice - minPrice)) * priceChartHeight +
+        margin.top;
+
+      const yScaleVolume = (volume: number) =>
+        volumeChartHeight -
+        (volume / maxVolume) * volumeChartHeight +
+        priceChartHeight +
         margin.top;
 
       // Draw axes
@@ -85,7 +119,7 @@ const OHLCVChart: React.FC<OHLCVChartProps> = ({
       ctx.stroke();
 
       // Draw Y-axis labels (price values)
-      ctx.fillStyle = "#000";
+      ctx.fillStyle = dark ? "#fff" : "#000";
       ctx.font = "10px Arial";
       const priceSteps = 5; // Number of steps on the Y-axis
       for (let i = 0; i <= priceSteps; i++) {
@@ -103,32 +137,59 @@ const OHLCVChart: React.FC<OHLCVChartProps> = ({
         ctx.stroke();
       }
 
-      // Draw X-axis labels (date and time)
+      // Draw X-axis labels (date and time) with a minimum spacing of 50px between vertical lines
+      const minSpacing = 75; // Minimum pixel spacing between vertical grid lines
+      let lastX = -Infinity; // Track the last drawn X-coordinate
+
       visibleData.forEach((d, i) => {
-        const x = xScale(i);
-        if (i % Math.ceil(visibleData.length / 10) === 0) {
-          ctx.fillStyle = "#000";
-          ctx.fillText(`${d.date} ${d.time}`, x, chartHeight + margin.top + 20);
+        const x = xScale(i) + candleWidth / 2; // Center of the candle (assume candleWidth is defined)
+
+        // Only draw the label and grid line if the current position is at least `minSpacing` away from the last
+        if (x - lastX >= minSpacing) {
+          // Draw vertical grid line
+          ctx.beginPath();
+          ctx.moveTo(x, margin.top);
+          ctx.lineTo(x, chartHeight + margin.top);
+          ctx.strokeStyle = "#eee";
+          ctx.stroke();
+
+          // Draw label, ensuring it's centered below the vertical line
+          ctx.fillStyle = dark ? "#fff" : "#000";
+          ctx.textAlign = "center"; // Align text to the center of the X coordinate
+          ctx.fillText(
+            `${formatTime(d.date, d.time, unit)}`,
+            x,
+            chartHeight + margin.top + 20
+          );
+
+          // Update the last drawn X-coordinate
+          lastX = x;
         }
       });
 
       // Draw candlesticks
       visibleData.forEach((d, i) => {
         const x = xScale(i);
-        const openY = yScale(d.open);
-        const closeY = yScale(d.close);
-        const highY = yScale(d.high);
-        const lowY = yScale(d.low);
+        const openY = yScalePrice(d.open);
+        const closeY = yScalePrice(d.close);
+        const highY = yScalePrice(d.high);
+        const lowY = yScalePrice(d.low);
+
+        // Determine if the candle is bullish or bearish
+        const isBullish = d.close > d.open;
+
+        // Set colors for bullish and bearish candles
+        const candleColor = isBullish ? "green" : "red";
 
         // High-low line
         ctx.beginPath();
-        ctx.moveTo(x + candleWidth / 2, highY); // 중앙선
-        ctx.lineTo(x + candleWidth / 2, lowY); // 중앙선
-        ctx.strokeStyle = "black";
+        ctx.moveTo(x + candleWidth / 2, highY);
+        ctx.lineTo(x + candleWidth / 2, lowY);
+        ctx.strokeStyle = candleColor; // Match the color of the candlestick body
         ctx.stroke();
 
         // Candlestick body
-        ctx.fillStyle = d.open > d.close ? "red" : "green";
+        ctx.fillStyle = candleColor;
         ctx.fillRect(
           x,
           Math.min(openY, closeY),
@@ -136,9 +197,21 @@ const OHLCVChart: React.FC<OHLCVChartProps> = ({
           Math.abs(openY - closeY)
         );
       });
+
+      visibleData.forEach((d, i) => {
+        const x = xScale(i);
+        const volumeYStart = yScaleVolume(0); // Bottom of the volume chart
+        const volumeYEnd = yScaleVolume(d.volume); // Top of the volume bar
+
+        ctx.fillStyle =
+          d.open > d.close
+            ? "rgba(255, 0, 0, 0.5)" // Red with transparency
+            : "rgba(0, 255, 0, 0.5)"; // Green with transparency
+        ctx.fillRect(x, volumeYEnd, candleWidth, volumeYStart - volumeYEnd);
+      });
     };
 
-    drawChart(ctx, width, height);
+    drawChart(ctx);
 
     // Handle mouse wheel for zooming
     const handleWheel = (event: WheelEvent) => {
@@ -150,71 +223,173 @@ const OHLCVChart: React.FC<OHLCVChartProps> = ({
       const rect = containerRef.current.getBoundingClientRect();
       const mouseXInCanvas = event.clientX - rect.left;
 
-      const marginLeft = 10; // margin.left
-      const chartWidth = width - marginLeft - 50; // width에서 margin.left와 margin.right를 제외한 차트 너비
-      const mouseXInChart = mouseXInCanvas - marginLeft; // 마우스 X 좌표에서 차트 시작점(margin.left)을 뺌
+      const marginLeft = 10;
+      const chartWidth = dimensions.width - marginLeft - 50;
+      const mouseXInChart = mouseXInCanvas - marginLeft;
 
-      // 마우스가 차트 영역 외부에 있는 경우 무시
       if (mouseXInChart < 0 || mouseXInChart > chartWidth) return;
 
-      // 마우스 위치를 데이터 인덱스로 변환
-      const mouseIndex = Math.floor(
-        mouseXInChart / (end - start)
-        // (mouseXInChart / chartWidth) * (end - start) + start
-      );
-      console.log(mouseXInChart);
+      const visibleDataCount = end - start;
+      const mouseIndex =
+        Math.floor((mouseXInChart / chartWidth) * visibleDataCount) + start;
+
+      const zoomFactor = 0.5;
       const delta = Math.sign(event.deltaY);
 
-      if (delta > 0) {
-        // 확대 (줌 인)
-        start = Math.max(0, start - 1);
-        end = Math.min(data.length, end + 1);
-      } else if (delta < 0 && end - start > 2) {
-        // 축소 (줌 아웃)
-        const leftSize = mouseIndex - start;
-        const rightSize = end - mouseIndex;
+      if (delta < 0 && visibleDataCount > 1) {
+        // Zoom In, but prevent having less than one candle
+        const leftZoomAmount = Math.max(
+          1,
+          Math.ceil((mouseIndex - start) * zoomFactor)
+        );
+        const rightZoomAmount = Math.max(
+          1,
+          Math.ceil((end - mouseIndex) * zoomFactor)
+        );
 
-        let leftZoom = 0;
-        let rightZoom = 0;
-
-        // 마우스 위치가 좌우 비대칭일 경우 조정
-        if (leftSize > rightSize && rightSize !== 0) {
-          leftZoom = Math.ceil(leftSize / rightSize);
-          rightZoom = 1;
-        } else if (rightSize > leftSize && leftSize !== 0) {
-          leftZoom = 1;
-          rightZoom = Math.ceil(rightSize / leftSize);
-        } else if (rightSize === 0) {
-          leftZoom = 1;
-          rightZoom = 0;
-        } else if (leftSize === 0) {
-          leftZoom = 0;
-          rightZoom = 1;
-        } else {
-          leftZoom = 1;
-          rightZoom = 1;
+        start = Math.max(0, mouseIndex - leftZoomAmount);
+        end = Math.max(mouseIndex + rightZoomAmount, start + 2);
+        if (end - start < 1) {
+          end = start + 1;
         }
+        // Ensure at least one candle remains visible
+        if (end - start < 1) {
+          end = start + 1;
+        }
+      } else if (delta > 0 && end - start < data.length) {
+        // Zoom Out
+        const leftExpandAmount = Math.max(
+          1,
+          Math.ceil((mouseIndex - start) * zoomFactor)
+        );
+        const rightExpandAmount = Math.max(
+          1,
+          Math.ceil((end - mouseIndex) * zoomFactor)
+        );
 
-        // 마우스를 기준으로 확대 비율 조정 (점진적으로 중앙으로 이동)
-        const shift = Math.floor((rightSize - leftSize) * 0.2);
-        start = Math.max(0, start + leftZoom - shift);
-        end = Math.min(data.length, end - rightZoom - shift);
+        start = Math.max(0, start - leftExpandAmount);
+        end = Math.min(data.length, end + rightExpandAmount);
       }
+
+      if (start < 0) start = 0;
+      if (end > data.length) end = data.length;
 
       setVisibleRange({ start, end });
     };
 
+    const handleMouseDown = (event: MouseEvent) => {
+      setIsDragging(true);
+      setDragStartX(event.clientX); // Record the starting X position of the drag
+    };
+
+    const handleMouseMove = (event: MouseEvent) => {
+      if (!isDragging || dragStartX === null) return;
+
+      // Calculate drag distance in pixels
+      const dragDistance = event.clientX - dragStartX;
+
+      // Convert drag distance to data index shift
+      const chartWidth = dimensions.width - 60; // Exclude margins
+      const visibleDataCount = visibleRange.end - visibleRange.start;
+      const candleWidthWithGap = chartWidth / visibleDataCount;
+      const indexShift = Math.round(dragDistance / candleWidthWithGap);
+
+      if (indexShift !== 0) {
+        setVisibleRange((prevRange) => {
+          let newStart = prevRange.start - indexShift;
+          let newEnd = prevRange.end - indexShift;
+
+          // Ensure the range stays within bounds
+          if (newStart < 0) {
+            newEnd += Math.abs(newStart);
+            newStart = 0;
+          }
+          if (newEnd > data.length) {
+            newStart -= newEnd - data.length;
+            newEnd = data.length;
+          }
+
+          return { start: newStart, end: newEnd };
+        });
+
+        // Update drag start position to avoid cumulative shifts
+        setDragStartX(event.clientX);
+      }
+    };
+
+    const handleMouseClick = (event: MouseEvent) => {
+      if (!containerRef.current) return;
+
+      const rect = containerRef.current.getBoundingClientRect();
+      const mouseXInCanvas = event.clientX - rect.left;
+
+      const marginLeft = 10;
+      const chartWidth = dimensions.width - marginLeft - 50;
+
+      if (
+        mouseXInCanvas < marginLeft ||
+        mouseXInCanvas > chartWidth + marginLeft
+      ) {
+        return; // Ignore clicks outside the chart area
+      }
+
+      const visibleDataCount = visibleRange.end - visibleRange.start;
+      const candleWidthWithGap = chartWidth / visibleDataCount;
+      const clickedIndex =
+        Math.floor((mouseXInCanvas - marginLeft) / candleWidthWithGap) +
+        visibleRange.start;
+
+      if (
+        clickedIndex >= visibleRange.start &&
+        clickedIndex < visibleRange.end
+      ) {
+        const clickedCandle = data[clickedIndex];
+
+        // Safely call setClickedCandle if it is defined
+        if (setClickedCandle) {
+          setClickedCandle(clickedCandle);
+        }
+      }
+    };
+
+    const handleMouseUpOrLeave = () => {
+      setIsDragging(false);
+      setDragStartX(null);
+    };
+
+    containerRef.current?.addEventListener("mousedown", handleMouseDown);
+    containerRef.current?.addEventListener("mouseup", handleMouseUpOrLeave);
+    containerRef.current?.addEventListener("mousemove", handleMouseMove);
     containerRef.current?.addEventListener("wheel", handleWheel);
+    containerRef.current?.addEventListener("click", handleMouseClick);
 
     return () => {
+      containerRef.current?.removeEventListener("mousedown", handleMouseDown);
+      containerRef.current?.removeEventListener("mousemove", handleMouseMove);
+      containerRef.current?.removeEventListener(
+        "mouseup",
+        handleMouseUpOrLeave
+      );
       containerRef.current?.removeEventListener("wheel", handleWheel);
+      containerRef.current?.removeEventListener("click", handleMouseClick);
     };
-  }, [data, visibleRange, width, height]);
+  }, [
+    data,
+    visibleRange,
+    isDragging,
+    dragStartX,
+    setClickedCandle,
+    dimensions.width,
+    dimensions.height,
+  ]);
 
   return (
     <div
       ref={containerRef}
-      style={{ width: `${width}px`, height: `${height}px` }}
+      style={{
+        width: `100%`,
+        height: `100%`,
+      }}
     >
       <canvas ref={canvasRef}></canvas>
     </div>
