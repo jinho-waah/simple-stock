@@ -1,3 +1,7 @@
 src/main.tsx
 src/App.tsx
-node_modules/
+*.config.js
+*.config.ts
+*.test.*
+*.spec.*
+.vscode/

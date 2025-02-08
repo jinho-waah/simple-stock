@@ -1,12 +1,12 @@
 {
   "files": [
-    "dist",
-    "src/index.ts"
+    "dist"
   ],
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "name": "simple-stock",
-  "private": true,
   "version": "0.0.0",
-  "type": "module",
+  "type": "commonjs",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
