@@ -1,5 +1,7 @@
 src/main.tsx
 src/App.tsx
-.storybook/
-node_modules/
-dist/storybook-static/
+*.config.js
+*.config.ts
+*.test.*
+*.spec.*
+.vscode/
