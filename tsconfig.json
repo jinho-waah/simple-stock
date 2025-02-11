@@ -1,5 +1,8 @@
 {
   "compilerOptions": {
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
     "target": "ESNext",
     "module": "ESNext",
     "moduleResolution": "Node",
@@ -7,11 +10,17 @@
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "strict": true,
-    "types": ["node"]
+    "types": ["node", "react", "react-dom"],
+    "declaration": true,
+    "declarationDir": "./dist",
+    "outDir": "./dist"
   },
-  "files": [],
-  "references": [
-    { "path": "./tsconfig.app.json" },
-    { "path": "./tsconfig.node.json" }
+  "include": ["lib/**/*"],
+  "exclude": [
+    "node_modules",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "lib/main.tsx",
+    "lib/App.tsx"
   ]
 }

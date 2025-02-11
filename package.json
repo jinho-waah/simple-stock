@@ -3,19 +3,20 @@
     "dist"
   ],
   "main": "dist/index.js",
+  "module": "dist/simple-stock.es.js",
   "types": "dist/index.d.ts",
   "name": "simple-stock",
   "version": "0.0.4",
-  "type": "commonjs",
+  "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview"
   },
-  "dependencies": {
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+  "peerDependencies": {
+    "react": "^18.0.0 || ^17.0.0",
+    "react-dom": "^18.0.0 || ^17.0.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",
@@ -31,5 +32,8 @@
     "typescript-eslint": "^8.18.2",
     "vite": "^6.0.5",
     "vite-plugin-dts": "^4.5.0"
+  },
+  "dependencies": {
+    "simple-stock": "file:../jongto/simple-stock-0.0.4.tgz"
   }
 }
