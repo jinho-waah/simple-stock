@@ -1,6 +1,7 @@
 {
   "files": [
-    "dist"
+    "dist",
+    "dist/index.d.ts"
   ],
   "main": "dist/index.js",
   "module": "dist/simple-stock.es.js",
